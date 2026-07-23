@@ -1,0 +1,64 @@
+name: Windows Build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up MSYS2 with build dependencies
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-qt5
+            mingw-w64-x86_64-fftw
+            mingw-w64-x86_64-hamlib
+            mingw-w64-x86_64-qwt-qt5
+            mingw-w64-x86_64-openjpeg2
+            mingw-w64-x86_64-cmake
+            make
+            git
+
+      - name: Build EasyFriend
+        run: |
+          cd src
+          qmake
+          mingw32-make -j4
+
+      - name: Collect binary and required DLLs
+        run: |
+          mkdir -p dist
+          # find the built exe (name depends on qsstv.pro TARGET)
+          find src -maxdepth 2 -iname "*.exe" -exec cp {} dist/ \;
+          # bundle the Qt/mingw runtime DLLs the exe needs
+          cd dist
+          for f in *.exe; do
+            windeployqt "$f" || true
+          done
+          # copy remaining mingw runtime libs commonly needed
+          cp /mingw64/bin/libfftw3-3.dll dist/ 2>/dev/null || true
+          cp /mingw64/bin/libhamlib-4.dll dist/ 2>/dev/null || true
+          cp /mingw64/bin/libgcc_s_seh-1.dll dist/ 2>/dev/null || true
+          cp /mingw64/bin/libstdc++-6.dll dist/ 2>/dev/null || true
+          cp /mingw64/bin/libwinpthread-1.dll dist/ 2>/dev/null || true
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EasyFriend-windows
+          path: dist/
